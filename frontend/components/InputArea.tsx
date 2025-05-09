@@ -1,9 +1,7 @@
-// frontend/components/InputArea.tsx
-
 'use client'; // Use if using client-side features (ref, event handlers)
 
 import React, { JSX, useRef } from 'react'; // Import useRef if used directly here, but we pass it in props
-import { RefreshCcw } from 'lucide-react'; // Import icon
+import { RefreshCcw, Loader2 } from 'lucide-react'; // Added Loader2 icon for better animation
 
 // Define the props this component expects
 interface InputAreaProps {
@@ -23,7 +21,7 @@ const InputArea: React.FC<InputAreaProps> = ({
     handleClear,
     isAnalyzing,
     isFlagged,
-    colors
+    colors 
 }) => {
     return (
         <div className="p-6">
@@ -39,7 +37,7 @@ const InputArea: React.FC<InputAreaProps> = ({
                     Clear
                 </button>
             </div>
-
+            
             {/* Keyboard simulator container with enhanced styling */}
             <div className={`
                 relative border-2 rounded-lg p-4 min-h-[150px] mb-4
@@ -56,24 +54,35 @@ const InputArea: React.FC<InputAreaProps> = ({
                         ${isFlagged ? `${colors.text} selection:bg-indigo-100` : 'text-gray-800'}
                         empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400
                     `}
-                    contentEditable="true"
+                    contentEditable="true" // Always allow editing
                     data-placeholder="Start typing here or paste text to analyze..."
                     onInput={handleInput} // Use event handler passed from the parent
                     role="textbox"
                     aria-multiline="true"
-                    // Note: We don't use dangerouslySetInnerHTML here anymore.
-                    // The parent (HomePage) now handles setting the initial text via ref.current.textContent.
-                    // This simplifies InputArea.
                 />
-
-                {/* Analysis Indicator */}
+                
+                {/* Non-intrusive Analysis Indicator */}
                 {isAnalyzing && (
-                    <div className="absolute bottom-2 right-2 flex items-center text-sm text-indigo-600">
-                        <div className="animate-spin mr-2 h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full"></div>
-                        Analyzing...
+                    <div className="absolute bottom-0 right-0 left-0 flex justify-center pb-2 pointer-events-none">
+                        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-full shadow-sm">
+                            <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                            <span className="text-sm font-medium text-indigo-700">Analyzing...</span>
+                        </div>
                     </div>
                 )}
             </div>
+            
+            {/* Add a global style for the custom animation */}
+            <style jsx global>{`
+                @keyframes progress-indeterminate {
+                    0% { width: 0%; margin-left: -20%; }
+                    50% { width: 40%; margin-left: 20%; }
+                    100% { width: 0%; margin-left: 100%; }
+                }
+                .animate-progress-indeterminate {
+                    animation: progress-indeterminate 1.5s ease-in-out infinite;
+                }
+            `}</style>
         </div>
     );
 };

@@ -2,10 +2,8 @@
 
 'use client';
 
-import { useState, useEffect, useRef, JSX } from 'react'; // Keep necessary hooks and JSX type
-// No CSS module import needed
-// Keep the Lucide icons used directly in this file (Check, AlertTriangle, AlertCircle)
-import { AlertTriangle, Check, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, JSX } from 'react';
+import { AlertTriangle, Check, AlertCircle } from 'lucide-react'; // Keep icons used directly here
 
 
 // --- Import the new components ---
@@ -14,27 +12,38 @@ import InputArea from '../components/InputArea';
 import FeedbackPanel from '../components/FeedbackPanel'; // This will include Scores, Severity, Suggestions, Statistics
 import ActionFooter from '../components/ActionFooter';
 
+// Assuming you have a shared types file (optional but good practice)
+// import { DetectionResult, Suggestion, StatisticItem } from '../types';
 
 // --- Configuration ---
 const API_URL = 'http://localhost:5000/detect'; // !! Match your Flask backend !!
 const DEBOUNCE_DELAY = 500; // Half a second
 
-// --- Type for the API Response ---
-// Ensure this matches what your backend actually returns
+// --- Type for the API Response (Updated to match new backend) ---
 interface DetectionResult {
     text: string;
     is_misogynistic: boolean;
-    score_toxic: number;
-    score_insult: number;
+    score_misogyny?: number; // Updated score field name
     error?: string;
-    rule_applied?: string | null; // Add rule_applied if backend returns it
+    rule_applied?: string | null;
 }
 
-// --- Type for suggestions ---
-interface Suggestion { // Define the types here or import from a shared types file
+// --- Type for suggestions (Keep) ---
+interface Suggestion {
     original: string;
     suggested: string;
     reason: string;
+}
+
+// --- Type for Statistics Data (Needs to match backend /statistics endpoint response) ---
+// Assuming this data is fetched and passed down
+interface StatisticItem {
+    title: string;
+    value: string;
+    source: string;
+    info: string;
+    impact: string; // Added impact message
+    action: string; // Added action message
 }
 
 
@@ -48,17 +57,54 @@ export default function HomePage() {
     const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'none'>('none'); // Severity level
     const [showInfoPanel, setShowInfoPanel] = useState<boolean>(false); // State for the info panel
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]); // Generated suggestions
-    // Removed showSuggestions state - SuggestionsPanel manages its own internal toggle
-    const [toxicScore, setToxicScore] = useState<number>(0); // Score from backend
-    const [insultScore, setInsultScore] = useState<number>(0); // Score from backend
     const [showStatistics, setShowStatistics] = useState<boolean>(false); // State for the statistics panel
+    const [flaggedCount, setFlaggedCount] = useState<number>(0); // Session counter
+
+    // --- Updated Score State ---
+    const [misogynyScore, setMisogynyScore] = useState<number>(0); // Use a single score state
+
+
+    // --- State for Statistics Data (Fetched from backend) ---
+    const [misogynisticStatisticsData, setMisogynisticStatisticsData] = useState<StatisticItem[]>([]);
+    const [statsLoading, setStatsLoading] = useState<boolean>(true); // Loading state for stats
+    const [statsError, setStatsError] = useState<string | null>(null); // Error state for stats
+
 
     // --- Ref ---
     const textInputRef = useRef<HTMLDivElement>(null);
 
-    // --- Generate suggestions based on flagged content ---
-    // This logic stays in the parent as it depends on inputText and scores
-    const generateSuggestions = (text: string, currentToxicScore: number, currentInsultScore: number): Suggestion[] => {
+
+    // --- useEffect to Fetch Statistics Data on Mount (Keep) ---
+    useEffect(() => {
+        const fetchStatistics = async () => {
+            const API_URL_STATISTICS = 'http://localhost:5000/statistics'; // Define URL here or import
+            try {
+                const response = await fetch(API_URL_STATISTICS);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data: StatisticItem[] = await response.json();
+                // You might need to manually add icons if your backend doesn't provide them
+                // const dataWithIcons = data.map(item => ({
+                //     ...item,
+                //     icon: statisticIcons[item.title] || <BarChart2 className="w-5 h-5 text-gray-500" /> // Use your icon mapping
+                // }));
+                setMisogynisticStatisticsData(data);
+                setStatsLoading(false);
+            } catch (error) {
+                console.error("Error fetching statistics:", error);
+                setStatsError(`Failed to load statistics: ${String(error)}`);
+                setStatsLoading(false);
+            }
+        };
+
+        fetchStatistics(); // Call the fetch function
+
+    }, []); // Empty dependency array means this effect runs only once on component mount
+
+
+    // --- Generate suggestions based on flagged content (Updated to use misogynyScore) ---
+    const generateSuggestions = (text: string, currentMisogynyScore: number): Suggestion[] => {
          const commonProblematicTerms = [
             { term: 'bitch', replacement: 'person', reason: 'Gender-specific derogatory term' },
             { term: 'slut', replacement: '[avoid judgment]', reason: 'Sexually judgmental term' },
@@ -70,25 +116,23 @@ export default function HomePage() {
             { term: 'shrill', replacement: 'emphatic', reason: 'Typically used to criticize women\'s voices' },
             { term: 'nagging', replacement: 'persistent', reason: 'Often applied negatively to women' },
              // Add the specific rule-based phrases here if you have them in your backend
+             // These rules might need adjustment based on the new model's behavior
              { term: 'women are dramatic', replacement: 'Some women are dramatic', reason: 'Avoid harmful stereotypes' },
              { term: 'typical women driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' },
-             { term: 'woman driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' }, // Add variations
+             { term: 'woman driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' },
         ];
 
         const lowerText = text.toLowerCase();
         const generated: Suggestion[] = [];
 
         commonProblematicTerms.forEach(({ term, replacement, reason }) => {
-            // Use word boundaries (\b) to avoid matching "bitchen" in "kitchen" etc.
-            // But for some terms like 'emotional' or 'nagging', you might omit \b if you want to catch variations like "overly emotional"
-             const regex = new RegExp(`\\b${term}\\b`, 'gi'); // 'gi' for global, case-insensitive
+             const regex = new RegExp(`\\b${term}\\b`, 'gi');
              const matches = text.match(regex);
 
             if (matches) {
-                 // Add suggestion only if it's not a duplicate term found multiple times
                  if (!generated.some(s => s.original.toLowerCase() === term.toLowerCase())) {
                     generated.push({
-                        original: matches[0], // Use the actual matched term's case
+                        original: matches[0],
                         suggested: replacement,
                         reason: reason
                     });
@@ -96,13 +140,9 @@ export default function HomePage() {
             }
         });
 
-        // Add general suggestion if flagged but no specific terms found
-        // Use thresholds for this check that are slightly lower than your flag thresholds
-        // Or check if isFlagged is true and suggestions is empty after iterating terms
-        // const isGenerallyToxic = currentToxicScore > 0.55; // Example threshold for general toxicity suggestion
-        // const isGenerallyInsulting = currentInsultScore > 0.7; // Example threshold for general insult suggestion
-
-        if (generated.length === 0 && isFlagged) { // Check if flagged but no specific terms were matched
+        // Add general suggestion if flagged by the backend AND no specific terms found
+        // This ensures you still get a suggestion even for phrases the model flags but aren't in your specific list
+        if (generated.length === 0 && isFlagged) {
              generated.push({
                 original: "overall tone",
                 suggested: "more neutral language",
@@ -113,8 +153,8 @@ export default function HomePage() {
         return generated;
     };
 
-    // --- Async function to call the API ---
-    // This logic stays in the parent
+
+    // --- Async function to call the API (Updated to use misogynyScore) ---
     const checkTextWithApi = async (text: string) => {
         setIsAnalyzing(true);
          // Clear previous state related to analysis result before fetching
@@ -122,7 +162,7 @@ export default function HomePage() {
          setSeverity('none');
          setSuggestions([]); // Clear previous suggestions
          setShowStatistics(false); // Hide stats when re-analyzing
-         // Don't clear feedback here immediately, maybe show 'Analyzing...'
+
 
         try {
             const response = await fetch(API_URL, {
@@ -142,46 +182,42 @@ export default function HomePage() {
             const result: DetectionResult = await response.json();
             console.log("Detection Result:", result);
 
-            // Update state with results from backend
-            setToxicScore(result.score_toxic);
-            setInsultScore(result.score_insult);
-            setIsFlagged(result.is_misogynistic);
+            // --- Use the new score ---
+            const currentMisogynyScore = result.score_misogyny ?? 0; // Use nullish coalescing for safety
+            setMisogynyScore(currentMisogynyScore);
+            setIsFlagged(result.is_misogynistic); // Use the boolean flag from backend
 
-            // Determine severity based on scores, not just the boolean flag
-            // This logic should align with or be independent of the backend's is_misogynistic logic
-            // You could use the HIGHER score to determine severity
-            const maxScore = Math.max(result.score_toxic, result.score_insult);
-            if (maxScore > 0.8) setSeverity('high'); // Define your severity thresholds here
-            else if (maxScore > 0.5) setSeverity('medium'); // Example threshold for medium
-            else if (maxScore > 0.3) setSeverity('low');    // Example threshold for low
-            else setSeverity('none'); // Below all thresholds
+            // --- Determine severity based on the single misogyny score ---
+            // Adjust these thresholds based on your tuning with the new model
+            if (currentMisogynyScore > 0.8) setSeverity('high');
+            else if (currentMisogynyScore > 0.5) setSeverity('medium');
+            else if (currentMisogynyScore > 0.2) setSeverity('low'); // Lower threshold for 'low' severity? Test!
+            else setSeverity('none');
 
-            // Set feedback message based on the *severity* or the *isFlagged* boolean from backend
-             if (result.is_misogynistic) { // Use the backend's decision for the main flag
+            // --- Update feedback message and trigger features based on backend flag ---
+             if (result.is_misogynistic) {
+                 setFlaggedCount(prevCount => prevCount + 1);
+
                  let message = "This text contains potentially harmful language.";
-                 // Add info about which score was highest if desired
-                 if (result.score_toxic > result.score_insult && result.score_toxic > (result.score_insult + 0.1)) {
-                      message += ` High Toxicity detected.`;
-                 } else if (result.score_insult > result.score_toxic && result.score_insult > (result.score_toxic + 0.1)) {
-                      message += ` High Insult detected.`;
+                 // You could add info about the specific score if desired
+                 // message += ` Misogyny likelihood: ${Math.round(currentMisogynyScore * 100)}%.`;
+                 if (result.rule_applied) {
+                     message += ` (Identified by rule: ${result.rule_applied})`; // Optional: indicate if rule triggered
                  }
                  setFeedback(message);
 
-                 // Generate suggestions if content is flagged by the backend
-                 const newSuggestions = generateSuggestions(text, result.score_toxic, result.score_insult);
+                 // Generate suggestions if flagged by the backend
+                 const newSuggestions = generateSuggestions(text, currentMisogynyScore); // Pass the single score
                  setSuggestions(newSuggestions);
-                 // setShowSuggestions(newSuggestions.length > 0); // Optional: auto-open suggestions if any
                  setShowStatistics(true); // Show statistics when content is flagged
              } else {
                  setFeedback("Text appears to be inclusive and respectful.");
                  setSuggestions([]); // Clear suggestions for non-flagged text
-                 // setShowSuggestions(false); // Hide suggestions for non-flagged text
                  setShowStatistics(false); // Hide statistics for non-flagged text
              }
 
              if (result.error) {
                  console.error("Backend reported error:", result.error);
-                 // Maybe update feedback to include backend error?
                  setFeedback(`Backend message: ${result.error}`); // Overwrite previous feedback
              }
 
@@ -191,113 +227,82 @@ export default function HomePage() {
             setFeedback(`Connection error: ${errorMessage}`); // Show connection/fetch errors
             setIsFlagged(false); // Ensure flag is off on error
             setSeverity('none'); // Ensure severity is none on error
+            // Reset score on error
+            setMisogynyScore(0);
         } finally {
             setIsAnalyzing(false); // End loading state
         }
     };
 
-    // useEffect hook for debounced analysis - Logic stays in parent
+
+    // --- useEffect hook for debounced analysis (Keep) ---
     useEffect(() => {
-        // Clear analysis results and states when input becomes empty
         if (inputText.trim() === "") {
             setIsFlagged(false);
             setFeedback("");
             setSeverity('none');
             setSuggestions([]);
-            // setShowSuggestions(false); // Manage this state internally in SuggestionsPanel
             setShowStatistics(false);
-            setIsAnalyzing(false); // Ensure analyzing is false when empty
+            setIsAnalyzing(false);
+            setMisogynyScore(0); // Reset score when input is empty
             return;
         }
 
-        // Set the analyzing state when input changes and is not empty
         setIsAnalyzing(true);
-        // Clear previous timeout before setting a new one
         const handler: NodeJS.Timeout = setTimeout(() => {
-            // Call the API function after the debounce delay
             checkTextWithApi(inputText);
         }, DEBOUNCE_DELAY);
 
-        // Cleanup function: clear the timeout
         return () => {
             clearTimeout(handler);
         };
 
     }, [inputText]); // Effect re-runs when inputText changes
 
-    // Handler for direct text input (contenteditable div) - Logic stays in parent
+
+    // --- Handler for direct text input (contenteditable div) (Keep) ---
     const handleInput = (event: React.FormEvent<HTMLDivElement>) => {
-        // Use event.currentTarget instead of event.target for contenteditable
-        // Ensure ref is also valid
         if (textInputRef.current && event.currentTarget === textInputRef.current) {
-             // Check if textContent is available and not null/undefined
             const currentText = event.currentTarget.textContent ?? '';
             setInputText(currentText);
         }
     };
 
-    // Apply a suggestion - Logic stays in parent as it modifies inputText state and ref
+    // --- Apply a suggestion (Keep) ---
     const applySuggestion = (original: string, suggested: string) => {
         if (textInputRef.current && textInputRef.current.textContent !== null) {
-            // Replace the problematic term globally (case-insensitive)
             const regex = new RegExp(`\\b${original}\\b`, 'gi');
             const newText = textInputRef.current.textContent.replace(regex, suggested);
-
-            // Update the contenteditable div and state
             textInputRef.current.textContent = newText;
             setInputText(newText); // Trigger re-analysis via useEffect
         }
     };
 
-     // Get color scheme based on severity - Logic stays in parent or could be a utility function
+
+     // --- Get color scheme based on severity (Keep) ---
      const getSeverityColors = () => {
         switch (severity) {
-            case 'high':
-                return {
-                    border: 'border-red-500',
-                    bg: 'bg-red-50',
-                    text: 'text-red-700',
-                    icon: <AlertTriangle className="w-5 h-5 text-red-600" />,
-                };
-            case 'medium':
-                return {
-                    border: 'border-orange-400',
-                    bg: 'bg-orange-50',
-                    text: 'text-orange-700',
-                    icon: <AlertCircle className="w-5 h-5 text-orange-500" />,
-                };
-            case 'low':
-                return {
-                    border: 'border-yellow-400',
-                    bg: 'bg-yellow-50',
-                    text: 'text-yellow-700',
-                    icon: <AlertCircle className="w-5 h-5 text-yellow-500" />,
-                };
-            default: // severity === 'none'
-                return {
-                    border: 'border-green-400',
-                    bg: 'bg-green-50',
-                    text: 'text-green-700',
-                    icon: <Check className="w-5 h-5 text-green-600" />,
-                };
+            case 'high': return { border: 'border-red-500', bg: 'bg-red-50', text: 'text-red-700', icon: <AlertTriangle className="w-5 h-5 text-red-600" /> };
+            case 'medium': return { border: 'border-orange-400', bg: 'bg-orange-50', text: 'text-orange-700', icon: <AlertCircle className="w-5 h-5 text-orange-500" /> };
+            case 'low': return { border: 'border-yellow-400', bg: 'bg-yellow-50', text: 'text-yellow-700', icon: <AlertCircle className="w-5 h-5 text-yellow-500" /> };
+            default: return { border: 'border-green-400', bg: 'bg-green-50', text: 'text-green-700', icon: <Check className="w-5 h-5 text-green-600" /> };
         }
     };
-
     const colors = getSeverityColors(); // Get colors based on current severity state
 
-    // --- Clear the input area ---
+    // --- Clear the input area (Keep) ---
     const handleClear = () => {
         if (textInputRef.current) {
-            textInputRef.current.textContent = ''; // Clear the div content
+            textInputRef.textContent = ''; // Clear the div content
             setInputText(''); // Clear the state (triggers useEffect cleanup)
             // Reset all analysis-related states
             setIsFlagged(false);
             setFeedback('');
             setSeverity('none');
             setSuggestions([]);
-            // setShowSuggestions(false); // SuggestionsPanel manages its own toggle now
             setShowStatistics(false);
-            setIsAnalyzing(false); // Ensure analyzing is false
+            setIsAnalyzing(false);
+            setMisogynyScore(0); // Reset score on clear
         }
     };
 
@@ -332,18 +337,22 @@ export default function HomePage() {
                     />
 
                     {/* Feedback Area - Use the component */}
-                    {/* Only render FeedbackPanel if there's feedback OR if input is not empty (covers analyzing state) */}
+                    {/* Only render FeedbackPanel if there's feedback OR if input is not empty OR analysis is happening */}
                     {(feedback || inputText.trim() !== '' || isAnalyzing) && (
                         <FeedbackPanel
                             feedback={feedback}
                             isFlagged={isFlagged}
                             severity={severity}
-                            toxicScore={toxicScore}
-                            insultScore={insultScore}
+                            // --- Pass the single misogyny score ---
+                            misogynyScore={misogynyScore}
                             suggestions={suggestions}
-                            applySuggestion={applySuggestion} // Pass apply function down
-                            showStatistics={showStatistics} // Pass stats state
-                            setShowStatistics={setShowStatistics} // Pass stats setState
+                            applySuggestion={applySuggestion}
+                            showStatistics={showStatistics}
+                            setShowStatistics={setShowStatistics}
+                            flaggedCount={flaggedCount}
+                            misogynisticStatisticsData={misogynisticStatisticsData} // Pass fetched data
+                            statsLoading={statsLoading} // Pass loading state
+                            statsError={statsError} // Pass error state
                         />
                     )}
 

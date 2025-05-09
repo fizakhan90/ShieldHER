@@ -1,35 +1,129 @@
-'use client'; // Mark as Client Component
+// frontend/app/page.tsx
 
-import { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, Check, Send, RefreshCcw, AlertCircle, Info } from 'lucide-react';
+'use client';
+
+import { useState, useEffect, useRef, JSX } from 'react'; // Keep necessary hooks and JSX type
+// No CSS module import needed
+// Keep the Lucide icons used directly in this file (Check, AlertTriangle, AlertCircle)
+import { AlertTriangle, Check, AlertCircle } from 'lucide-react';
+
+
+// --- Import the new components ---
+import InfoPanel from '../components/InfoPanel';
+import InputArea from '../components/InputArea';
+import FeedbackPanel from '../components/FeedbackPanel'; // This will include Scores, Severity, Suggestions, Statistics
+import ActionFooter from '../components/ActionFooter';
+
 
 // --- Configuration ---
 const API_URL = 'http://localhost:5000/detect'; // !! Match your Flask backend !!
 const DEBOUNCE_DELAY = 500; // Half a second
 
 // --- Type for the API Response ---
+// Ensure this matches what your backend actually returns
 interface DetectionResult {
     text: string;
     is_misogynistic: boolean;
-    score: number;
+    score_toxic: number;
+    score_insult: number;
     error?: string;
+    rule_applied?: string | null; // Add rule_applied if backend returns it
 }
 
-export default function HomePage() {
-    // State with explicit types
-    const [inputText, setInputText] = useState<string>('');
-    const [isFlagged, setIsFlagged] = useState<boolean>(false);
-    const [feedback, setFeedback] = useState<string>('');
-    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-    const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'none'>('none');
-    const [showInfoPanel, setShowInfoPanel] = useState<boolean>(false);
+// --- Type for suggestions ---
+interface Suggestion { // Define the types here or import from a shared types file
+    original: string;
+    suggested: string;
+    reason: string;
+}
 
-    // Ref with explicit type for the HTMLDivElement
+
+// --- Main Page Component ---
+export default function HomePage() {
+    // --- State ---
+    const [inputText, setInputText] = useState<string>('');
+    const [isFlagged, setIsFlagged] = useState<boolean>(false); // Is the text flagged overall?
+    const [feedback, setFeedback] = useState<string>(''); // Main feedback message
+    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false); // Is the API call in progress?
+    const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'none'>('none'); // Severity level
+    const [showInfoPanel, setShowInfoPanel] = useState<boolean>(false); // State for the info panel
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]); // Generated suggestions
+    // Removed showSuggestions state - SuggestionsPanel manages its own internal toggle
+    const [toxicScore, setToxicScore] = useState<number>(0); // Score from backend
+    const [insultScore, setInsultScore] = useState<number>(0); // Score from backend
+    const [showStatistics, setShowStatistics] = useState<boolean>(false); // State for the statistics panel
+
+    // --- Ref ---
     const textInputRef = useRef<HTMLDivElement>(null);
 
+    // --- Generate suggestions based on flagged content ---
+    // This logic stays in the parent as it depends on inputText and scores
+    const generateSuggestions = (text: string, currentToxicScore: number, currentInsultScore: number): Suggestion[] => {
+         const commonProblematicTerms = [
+            { term: 'bitch', replacement: 'person', reason: 'Gender-specific derogatory term' },
+            { term: 'slut', replacement: '[avoid judgment]', reason: 'Sexually judgmental term' },
+            { term: 'whore', replacement: '[avoid judgment]', reason: 'Sexually judgmental term' },
+            { term: 'girl', replacement: 'woman', reason: 'When referring to adult women, "woman" is more respectful' },
+            { term: 'hysteric', replacement: 'upset', reason: 'Historically misogynistic term' },
+            { term: 'emotional', replacement: 'passionate', reason: 'Often used to dismiss women\'s concerns' },
+            { term: 'bossy', replacement: 'assertive', reason: 'Often applied negatively only to women' },
+            { term: 'shrill', replacement: 'emphatic', reason: 'Typically used to criticize women\'s voices' },
+            { term: 'nagging', replacement: 'persistent', reason: 'Often applied negatively to women' },
+             // Add the specific rule-based phrases here if you have them in your backend
+             { term: 'women are dramatic', replacement: 'Some women are dramatic', reason: 'Avoid harmful stereotypes' },
+             { term: 'typical women driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' },
+             { term: 'woman driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' }, // Add variations
+        ];
+
+        const lowerText = text.toLowerCase();
+        const generated: Suggestion[] = [];
+
+        commonProblematicTerms.forEach(({ term, replacement, reason }) => {
+            // Use word boundaries (\b) to avoid matching "bitchen" in "kitchen" etc.
+            // But for some terms like 'emotional' or 'nagging', you might omit \b if you want to catch variations like "overly emotional"
+             const regex = new RegExp(`\\b${term}\\b`, 'gi'); // 'gi' for global, case-insensitive
+             const matches = text.match(regex);
+
+            if (matches) {
+                 // Add suggestion only if it's not a duplicate term found multiple times
+                 if (!generated.some(s => s.original.toLowerCase() === term.toLowerCase())) {
+                    generated.push({
+                        original: matches[0], // Use the actual matched term's case
+                        suggested: replacement,
+                        reason: reason
+                    });
+                 }
+            }
+        });
+
+        // Add general suggestion if flagged but no specific terms found
+        // Use thresholds for this check that are slightly lower than your flag thresholds
+        // Or check if isFlagged is true and suggestions is empty after iterating terms
+        // const isGenerallyToxic = currentToxicScore > 0.55; // Example threshold for general toxicity suggestion
+        // const isGenerallyInsulting = currentInsultScore > 0.7; // Example threshold for general insult suggestion
+
+        if (generated.length === 0 && isFlagged) { // Check if flagged but no specific terms were matched
+             generated.push({
+                original: "overall tone",
+                suggested: "more neutral language",
+                reason: "The current phrasing may come across as hostile or disrespectful"
+            });
+        }
+
+        return generated;
+    };
+
     // --- Async function to call the API ---
+    // This logic stays in the parent
     const checkTextWithApi = async (text: string) => {
         setIsAnalyzing(true);
+         // Clear previous state related to analysis result before fetching
+         setIsFlagged(false);
+         setSeverity('none');
+         setSuggestions([]); // Clear previous suggestions
+         setShowStatistics(false); // Hide stats when re-analyzing
+         // Don't clear feedback here immediately, maybe show 'Analyzing...'
+
         try {
             const response = await fetch(API_URL, {
                 method: 'POST',
@@ -37,69 +131,126 @@ export default function HomePage() {
                 body: JSON.stringify({ text: text })
             });
 
+            // Handle non-OK responses more specifically
             if (!response.ok) {
                 const errorBody = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}. Body: ${errorBody}`);
+                let errorMsg = `HTTP error! status: ${response.status}`;
+                 if (errorBody) errorMsg += `. Body: ${errorBody}`;
+                throw new Error(errorMsg);
             }
 
             const result: DetectionResult = await response.json();
             console.log("Detection Result:", result);
 
+            // Update state with results from backend
+            setToxicScore(result.score_toxic);
+            setInsultScore(result.score_insult);
             setIsFlagged(result.is_misogynistic);
-            
-            // Set severity based on score (adjust thresholds as needed)
-            if (result.is_misogynistic) {
-                if (result.score > 0.7) setSeverity('high');
-                else if (result.score > 0.4) setSeverity('medium');
-                else setSeverity('low');
-                
-                setFeedback(`This text contains potentially harmful language with ${Math.round(result.score * 100)}% confidence.`);
-            } else {
-                setSeverity('none');
-                setFeedback("Text appears to be inclusive and respectful.");
-            }
-            
-            if (result.error) {
-                console.error("Backend reported error:", result.error);
-            }
+
+            // Determine severity based on scores, not just the boolean flag
+            // This logic should align with or be independent of the backend's is_misogynistic logic
+            // You could use the HIGHER score to determine severity
+            const maxScore = Math.max(result.score_toxic, result.score_insult);
+            if (maxScore > 0.8) setSeverity('high'); // Define your severity thresholds here
+            else if (maxScore > 0.5) setSeverity('medium'); // Example threshold for medium
+            else if (maxScore > 0.3) setSeverity('low');    // Example threshold for low
+            else setSeverity('none'); // Below all thresholds
+
+            // Set feedback message based on the *severity* or the *isFlagged* boolean from backend
+             if (result.is_misogynistic) { // Use the backend's decision for the main flag
+                 let message = "This text contains potentially harmful language.";
+                 // Add info about which score was highest if desired
+                 if (result.score_toxic > result.score_insult && result.score_toxic > (result.score_insult + 0.1)) {
+                      message += ` High Toxicity detected.`;
+                 } else if (result.score_insult > result.score_toxic && result.score_insult > (result.score_toxic + 0.1)) {
+                      message += ` High Insult detected.`;
+                 }
+                 setFeedback(message);
+
+                 // Generate suggestions if content is flagged by the backend
+                 const newSuggestions = generateSuggestions(text, result.score_toxic, result.score_insult);
+                 setSuggestions(newSuggestions);
+                 // setShowSuggestions(newSuggestions.length > 0); // Optional: auto-open suggestions if any
+                 setShowStatistics(true); // Show statistics when content is flagged
+             } else {
+                 setFeedback("Text appears to be inclusive and respectful.");
+                 setSuggestions([]); // Clear suggestions for non-flagged text
+                 // setShowSuggestions(false); // Hide suggestions for non-flagged text
+                 setShowStatistics(false); // Hide statistics for non-flagged text
+             }
+
+             if (result.error) {
+                 console.error("Backend reported error:", result.error);
+                 // Maybe update feedback to include backend error?
+                 setFeedback(`Backend message: ${result.error}`); // Overwrite previous feedback
+             }
+
         } catch (error) {
             console.error("Error checking text:", error);
             const errorMessage = error instanceof Error ? error.message : String(error);
-            setFeedback(`Connection error: ${errorMessage}`);
-            setIsFlagged(false);
-            setSeverity('none');
+            setFeedback(`Connection error: ${errorMessage}`); // Show connection/fetch errors
+            setIsFlagged(false); // Ensure flag is off on error
+            setSeverity('none'); // Ensure severity is none on error
         } finally {
-            setIsAnalyzing(false);
+            setIsAnalyzing(false); // End loading state
         }
     };
 
-    // useEffect hook to handle the API call with a timeout (debouncing)
+    // useEffect hook for debounced analysis - Logic stays in parent
     useEffect(() => {
+        // Clear analysis results and states when input becomes empty
         if (inputText.trim() === "") {
             setIsFlagged(false);
             setFeedback("");
             setSeverity('none');
+            setSuggestions([]);
+            // setShowSuggestions(false); // Manage this state internally in SuggestionsPanel
+            setShowStatistics(false);
+            setIsAnalyzing(false); // Ensure analyzing is false when empty
             return;
         }
 
+        // Set the analyzing state when input changes and is not empty
+        setIsAnalyzing(true);
+        // Clear previous timeout before setting a new one
         const handler: NodeJS.Timeout = setTimeout(() => {
+            // Call the API function after the debounce delay
             checkTextWithApi(inputText);
         }, DEBOUNCE_DELAY);
 
+        // Cleanup function: clear the timeout
         return () => {
             clearTimeout(handler);
         };
-    }, [inputText]);
 
-    // Handler for input events on the contenteditable div
+    }, [inputText]); // Effect re-runs when inputText changes
+
+    // Handler for direct text input (contenteditable div) - Logic stays in parent
     const handleInput = (event: React.FormEvent<HTMLDivElement>) => {
-        if (textInputRef.current && event.target instanceof HTMLDivElement) {
-            setInputText(event.target.textContent || '');
+        // Use event.currentTarget instead of event.target for contenteditable
+        // Ensure ref is also valid
+        if (textInputRef.current && event.currentTarget === textInputRef.current) {
+             // Check if textContent is available and not null/undefined
+            const currentText = event.currentTarget.textContent ?? '';
+            setInputText(currentText);
         }
     };
 
-    // Get color scheme based on severity
-    const getSeverityColors = () => {
+    // Apply a suggestion - Logic stays in parent as it modifies inputText state and ref
+    const applySuggestion = (original: string, suggested: string) => {
+        if (textInputRef.current && textInputRef.current.textContent !== null) {
+            // Replace the problematic term globally (case-insensitive)
+            const regex = new RegExp(`\\b${original}\\b`, 'gi');
+            const newText = textInputRef.current.textContent.replace(regex, suggested);
+
+            // Update the contenteditable div and state
+            textInputRef.current.textContent = newText;
+            setInputText(newText); // Trigger re-analysis via useEffect
+        }
+    };
+
+     // Get color scheme based on severity - Logic stays in parent or could be a utility function
+     const getSeverityColors = () => {
         switch (severity) {
             case 'high':
                 return {
@@ -122,7 +273,7 @@ export default function HomePage() {
                     text: 'text-yellow-700',
                     icon: <AlertCircle className="w-5 h-5 text-yellow-500" />,
                 };
-            default:
+            default: // severity === 'none'
                 return {
                     border: 'border-green-400',
                     bg: 'bg-green-50',
@@ -131,21 +282,27 @@ export default function HomePage() {
                 };
         }
     };
-    
-    const colors = getSeverityColors();
+
+    const colors = getSeverityColors(); // Get colors based on current severity state
 
     // --- Clear the input area ---
     const handleClear = () => {
         if (textInputRef.current) {
-            textInputRef.current.textContent = '';
-            setInputText('');
+            textInputRef.current.textContent = ''; // Clear the div content
+            setInputText(''); // Clear the state (triggers useEffect cleanup)
+            // Reset all analysis-related states
             setIsFlagged(false);
             setFeedback('');
             setSeverity('none');
+            setSuggestions([]);
+            // setShowSuggestions(false); // SuggestionsPanel manages its own toggle now
+            setShowStatistics(false);
+            setIsAnalyzing(false); // Ensure analyzing is false
         }
     };
 
-    // --- Render the UI using Tailwind Classes ---
+
+    // --- Render the UI using the new components ---
     return (
         <div className="min-h-screen bg-gradient-to-b from-purple-50 to-blue-50 py-10 px-4">
             <div className="max-w-3xl mx-auto">
@@ -154,145 +311,52 @@ export default function HomePage() {
                     <h1 className="text-3xl font-bold text-indigo-800 mb-2">ShieldHER</h1>
                     <p className="text-lg text-gray-600">Detect and prevent online misogyny in real-time</p>
                 </header>
-                
-                <main className="bg-white rounded-xl shadow-lg overflow-hidden">
-                    {/* Info Panel - Toggle */}
-                    <div className="bg-indigo-100 p-4 flex justify-between items-center">
-                        <div className="flex items-center">
-                            <Info className="w-5 h-5 text-indigo-600 mr-2" />
-                            <span className="text-indigo-800 font-medium">Online Misogyny Detection Simulator</span>
-                        </div>
-                        <button 
-                            onClick={() => setShowInfoPanel(!showInfoPanel)}
-                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
-                        >
-                            {showInfoPanel ? 'Hide Info' : 'What is this?'}
-                        </button>
-                    </div>
-                    
-                    {/* Info Panel - Content */}
-                    {showInfoPanel && (
-                        <div className="bg-indigo-50 p-4 border-b border-indigo-100">
-                            <h3 className="font-medium text-indigo-800 mb-2">About this Simulator</h3>
-                            <p className="text-gray-700 text-sm mb-2">
-                                This tool demonstrates real-time detection of misogynistic language, supporting SDG 5 (Gender Equality) 
-                                and SDG 10 (Reduced Inequalities).
-                            </p>
-                            <p className="text-gray-700 text-sm">
-                                As you type, our AI analyzes your text for potentially harmful content and provides immediate feedback.
-                                This technology can help create safer online spaces by identifying and reducing gender-based hate speech.
-                            </p>
-                        </div>
-                    )}
-                    
-                    {/* Input Section */}
-                    <div className="p-6">
-                        <div className="mb-2 flex justify-between items-center">
-                            <label htmlFor="text-input" className="block text-sm font-medium text-gray-700">
-                                Type or paste text to analyze
-                            </label>
-                            <button 
-                                onClick={handleClear}
-                                className="text-sm text-gray-500 hover:text-indigo-600 flex items-center"
-                            >
-                                <RefreshCcw className="w-3 h-3 mr-1" />
-                                Clear
-                            </button>
-                        </div>
-                        
-                        {/* Keyboard simulator container with enhanced styling */}
-                        <div className={`
-                            relative border-2 rounded-lg p-4 min-h-[150px] mb-4 
-                            transition-colors duration-300 ease-in-out
-                            ${isFlagged ? `${colors.border} ${colors.bg}` : 'border-gray-200 focus-within:border-indigo-500'}
-                            focus-within:ring-2 focus-within:ring-indigo-200
-                        `}>
-                            {/* Contenteditable div - The actual input area */}
-                            <div
-                                ref={textInputRef}
-                                id="text-input"
-                                className={`
-                                    w-full min-h-[120px] outline-none text-gray-800 text-lg
-                                    ${isFlagged ? `${colors.text} selection:bg-indigo-100` : 'text-gray-800'}
-                                    empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400
-                                `}
-                                contentEditable="true"
-                                data-placeholder="Start typing here or paste text to analyze..."
-                                onInput={handleInput}
-                                role="textbox"
-                                aria-multiline="true"
-                            />
-                            
-                            {/* Analysis Indicator */}
-                            {isAnalyzing && (
-                                <div className="absolute bottom-2 right-2 flex items-center text-sm text-indigo-600">
-                                    <div className="animate-spin mr-2 h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full"></div>
-                                    Analyzing...
-                                </div>
-                            )}
-                        </div>
-                    </div>
 
-                    {/* Feedback Area with enhanced visualization */}
-                    {(feedback || inputText.trim() !== '') && (
-                        <div className={`
-                            p-4 border-t ${colors.bg} transition-all duration-300
-                        `}>
-                            <div className="flex items-start">
-                                <div className="mr-3 mt-0.5">
-                                    {colors.icon}
-                                </div>
-                                <div>
-                                    <h3 className={`font-medium ${colors.text} mb-1`}>
-                                        {severity === 'none' ? 'Analysis Result' : `Alert: Potentially Harmful Content Detected`}
-                                    </h3>
-                                    <p className={`${colors.text} text-sm`}>
-                                        {feedback || (inputText.trim() !== '' ? 'Analyzing your text...' : '')}
-                                    </p>
-                                    
-                                    {/* Severity Indicator (only show if flagged) */}
-                                    {isFlagged && (
-                                        <div className="mt-3 flex items-center">
-                                            <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2">
-                                                <div 
-                                                    className={`h-2.5 rounded-full ${
-                                                        severity === 'high' ? 'bg-red-600' : 
-                                                        severity === 'medium' ? 'bg-orange-500' : 
-                                                        'bg-yellow-400'
-                                                    }`}
-                                                    style={{ width: `${severity === 'high' ? '100%' : severity === 'medium' ? '60%' : '30%'}` }}
-                                                ></div>
-                                            </div>
-                                            <span className={`text-xs font-medium ${colors.text}`}>
-                                                {severity === 'high' ? 'High Severity' : 
-                                                 severity === 'medium' ? 'Medium Severity' : 
-                                                 'Low Severity'}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
+                <main className="bg-white rounded-xl shadow-lg overflow-hidden">
+
+                    {/* Info Panel - Use the component */}
+                    <InfoPanel
+                        showInfoPanel={showInfoPanel}
+                        setShowInfoPanel={setShowInfoPanel}
+                    />
+
+                    {/* Input Section - Use the component */}
+                    <InputArea
+                        textInputRef={textInputRef}
+                        inputText={inputText} // Pass input text state (read-only here)
+                        handleInput={handleInput} // Pass the input handler
+                        handleClear={handleClear} // Pass the clear handler
+                        isAnalyzing={isAnalyzing} // Pass analyzing state
+                        isFlagged={isFlagged} // Pass flagged state
+                        colors={colors} // Pass severity colors
+                    />
+
+                    {/* Feedback Area - Use the component */}
+                    {/* Only render FeedbackPanel if there's feedback OR if input is not empty (covers analyzing state) */}
+                    {(feedback || inputText.trim() !== '' || isAnalyzing) && (
+                        <FeedbackPanel
+                            feedback={feedback}
+                            isFlagged={isFlagged}
+                            severity={severity}
+                            toxicScore={toxicScore}
+                            insultScore={insultScore}
+                            suggestions={suggestions}
+                            applySuggestion={applySuggestion} // Pass apply function down
+                            showStatistics={showStatistics} // Pass stats state
+                            setShowStatistics={setShowStatistics} // Pass stats setState
+                        />
                     )}
-                    
-                    {/* Action Footer */}
-                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
-                        <div className="text-xs text-gray-500">
-                            Powered by AI • Supporting SDG 5 & SDG 10
-                        </div>
-                        <div>
-                            <button
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center transition-colors"
-                                onClick={() => inputText.trim() && checkTextWithApi(inputText)}
-                                disabled={isAnalyzing || !inputText.trim()}
-                            >
-                                <Send className="w-4 h-4 mr-1" />
-                                Analyze Text
-                            </button>
-                        </div>
-                    </div>
+
+
+                    {/* Action Footer - Use the component */}
+                    <ActionFooter
+                        inputText={inputText} // Pass input text state
+                        isAnalyzing={isAnalyzing} // Pass analyzing state
+                        checkTextWithApi={checkTextWithApi} // Pass the analysis trigger function
+                    />
+
                 </main>
-                
+
                 {/* Project Context */}
                 <div className="mt-8 text-center text-gray-600 text-sm">
                     <p>A hackathon project for gender equality & inclusive online spaces</p>
@@ -301,3 +365,6 @@ export default function HomePage() {
         </div>
     );
 }
+
+// --- Global Styles are handled in styles/globals.css ---
+// No need for the <style jsx global> block here anymore

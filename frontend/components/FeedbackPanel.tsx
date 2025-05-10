@@ -5,7 +5,7 @@ import { AlertTriangle, Check, AlertCircle, Info, X, ChevronDown, ChevronUp, Ref
 import ImpactStatisticsPanel from './ImpactStatisticsPanel';
 import SuggestionsPanel from './SuggestionsPanel';
 
-// --- Type for DetectionResult ---
+
 interface DetectionResult {
     text: string;
     is_misogynistic: boolean;
@@ -14,14 +14,14 @@ interface DetectionResult {
     rule_applied?: string | null;
 }
 
-// --- Type for Suggestions ---
+
 interface Suggestion {
     original: string;
     suggested: string;
     reason: string;
 }
 
-// --- Type for Statistics Data ---
+
 interface StatisticItem {
     title: string;
     value: string;
@@ -31,7 +31,6 @@ interface StatisticItem {
     action: string;
 }
 
-// --- FeedbackPanelProps ---
 interface FeedbackPanelProps {
     feedback: string;
     isFlagged: boolean;
@@ -45,8 +44,8 @@ interface FeedbackPanelProps {
     misogynisticStatisticsData: StatisticItem[];
     statsLoading: boolean;
     statsError: string | null;
-    onDismiss?: () => void; // New prop for dismissing the panel
-    onRescan?: () => void;  // New prop for rescanning the content
+    onDismiss?: () => void; 
+    onRescan?: () => void;  
 }
 
 const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
@@ -67,7 +66,6 @@ const FeedbackPanel: React.FC<FeedbackPanelProps> = ({
 }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
 
-    // Get severity colors and icons
     const getSeverityInfo = () => {
         switch (severity) {
             case 'high': 

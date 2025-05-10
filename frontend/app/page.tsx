@@ -1,94 +1,67 @@
-// frontend/app/page.tsx
-
 'use client';
 
 import { useState, useEffect, useRef, JSX } from 'react';
-import { AlertTriangle, Check, AlertCircle } from 'lucide-react'; // Keep icons used directly here
+import { AlertTriangle, Check, AlertCircle } from 'lucide-react';
 
-
-// --- Import the new components ---
 import InfoPanel from '../components/InfoPanel';
 import InputArea from '../components/InputArea';
-import FeedbackPanel from '../components/FeedbackPanel'; // This will include Scores, Severity, Suggestions, Statistics
+import FeedbackPanel from '../components/FeedbackPanel';
 import ActionFooter from '../components/ActionFooter';
 
-// Assuming you have a shared types file (optional but good practice)
-// import { DetectionResult, Suggestion, StatisticItem } from '../types';
+const API_URL = 'http://localhost:5000/detect';
+const DEBOUNCE_DELAY = 500;
 
-// --- Configuration ---
-const API_URL = 'http://localhost:5000/detect'; // !! Match your Flask backend !!
-const DEBOUNCE_DELAY = 500; // Half a second
-
-// --- Type for the API Response (Updated to match new backend) ---
 interface DetectionResult {
     text: string;
     is_misogynistic: boolean;
-    score_misogyny?: number; // Updated score field name
+    score_misogyny?: number;
     error?: string;
     rule_applied?: string | null;
 }
 
-// --- Type for suggestions (Keep) ---
 interface Suggestion {
     original: string;
     suggested: string;
     reason: string;
 }
 
-// --- Type for Statistics Data (Needs to match backend /statistics endpoint response) ---
-// Assuming this data is fetched and passed down
 interface StatisticItem {
     title: string;
     value: string;
     source: string;
     info: string;
-    impact: string; // Added impact message
-    action: string; // Added action message
+    impact: string;
+    action: string;
 }
 
-
-// --- Main Page Component ---
 export default function HomePage() {
-    // --- State ---
     const [inputText, setInputText] = useState<string>('');
-    const [isFlagged, setIsFlagged] = useState<boolean>(false); // Is the text flagged overall?
-    const [feedback, setFeedback] = useState<string>(''); // Main feedback message
-    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false); // Is the API call in progress?
-    const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'none'>('none'); // Severity level
-    const [showInfoPanel, setShowInfoPanel] = useState<boolean>(false); // State for the info panel
-    const [suggestions, setSuggestions] = useState<Suggestion[]>([]); // Generated suggestions
-    const [showStatistics, setShowStatistics] = useState<boolean>(false); // State for the statistics panel
-    const [flaggedCount, setFlaggedCount] = useState<number>(0); // Session counter
+    const [isFlagged, setIsFlagged] = useState<boolean>(false);
+    const [feedback, setFeedback] = useState<string>('');
+    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+    const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'none'>('none');
+    const [showInfoPanel, setShowInfoPanel] = useState<boolean>(false);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+    const [showStatistics, setShowStatistics] = useState<boolean>(false);
+    const [flaggedCount, setFlaggedCount] = useState<number>(0);
 
-    // --- Updated Score State ---
-    const [misogynyScore, setMisogynyScore] = useState<number>(0); // Use a single score state
+    const [misogynyScore, setMisogynyScore] = useState<number>(0);
 
-
-    // --- State for Statistics Data (Fetched from backend) ---
     const [misogynisticStatisticsData, setMisogynisticStatisticsData] = useState<StatisticItem[]>([]);
-    const [statsLoading, setStatsLoading] = useState<boolean>(true); // Loading state for stats
-    const [statsError, setStatsError] = useState<string | null>(null); // Error state for stats
+    const [statsLoading, setStatsLoading] = useState<boolean>(true);
+    const [statsError, setStatsError] = useState<string | null>(null);
 
-
-    // --- Ref ---
     const textInputRef = useRef<HTMLDivElement>(null);
 
-
-    // --- useEffect to Fetch Statistics Data on Mount (Keep) ---
     useEffect(() => {
         const fetchStatistics = async () => {
-            const API_URL_STATISTICS = 'http://localhost:5000/statistics'; // Define URL here or import
+            const API_URL_STATISTICS = 'http://localhost:5000/statistics';
             try {
                 const response = await fetch(API_URL_STATISTICS);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data: StatisticItem[] = await response.json();
-                // You might need to manually add icons if your backend doesn't provide them
-                // const dataWithIcons = data.map(item => ({
-                //     ...item,
-                //     icon: statisticIcons[item.title] || <BarChart2 className="w-5 h-5 text-gray-500" /> // Use your icon mapping
-                // }));
                 setMisogynisticStatisticsData(data);
                 setStatsLoading(false);
             } catch (error) {
@@ -98,12 +71,10 @@ export default function HomePage() {
             }
         };
 
-        fetchStatistics(); // Call the fetch function
+        fetchStatistics();
 
-    }, []); // Empty dependency array means this effect runs only once on component mount
+    }, []);
 
-
-    // --- Generate suggestions based on flagged content (Updated to use misogynyScore) ---
     const generateSuggestions = (text: string, currentMisogynyScore: number): Suggestion[] => {
          const commonProblematicTerms = [
             { term: 'bitch', replacement: 'person', reason: 'Gender-specific derogatory term' },
@@ -115,8 +86,6 @@ export default function HomePage() {
             { term: 'bossy', replacement: 'assertive', reason: 'Often applied negatively only to women' },
             { term: 'shrill', replacement: 'emphatic', reason: 'Typically used to criticize women\'s voices' },
             { term: 'nagging', replacement: 'persistent', reason: 'Often applied negatively to women' },
-             // Add the specific rule-based phrases here if you have them in your backend
-             // These rules might need adjustment based on the new model's behavior
              { term: 'women are dramatic', replacement: 'Some women are dramatic', reason: 'Avoid harmful stereotypes' },
              { term: 'typical women driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' },
              { term: 'woman driver', replacement: 'driver', reason: 'Avoid harmful stereotypes' },
@@ -140,8 +109,6 @@ export default function HomePage() {
             }
         });
 
-        // Add general suggestion if flagged by the backend AND no specific terms found
-        // This ensures you still get a suggestion even for phrases the model flags but aren't in your specific list
         if (generated.length === 0 && isFlagged) {
              generated.push({
                 original: "overall tone",
@@ -153,16 +120,12 @@ export default function HomePage() {
         return generated;
     };
 
-
-    // --- Async function to call the API (Updated to use misogynyScore) ---
     const checkTextWithApi = async (text: string) => {
         setIsAnalyzing(true);
-         // Clear previous state related to analysis result before fetching
          setIsFlagged(false);
          setSeverity('none');
-         setSuggestions([]); // Clear previous suggestions
-         setShowStatistics(false); // Hide stats when re-analyzing
-
+         setSuggestions([]);
+         setShowStatistics(false);
 
         try {
             const response = await fetch(API_URL, {
@@ -171,7 +134,6 @@ export default function HomePage() {
                 body: JSON.stringify({ text: text })
             });
 
-            // Handle non-OK responses more specifically
             if (!response.ok) {
                 const errorBody = await response.text();
                 let errorMsg = `HTTP error! status: ${response.status}`;
@@ -182,60 +144,50 @@ export default function HomePage() {
             const result: DetectionResult = await response.json();
             console.log("Detection Result:", result);
 
-            // --- Use the new score ---
-            const currentMisogynyScore = result.score_misogyny ?? 0; // Use nullish coalescing for safety
+            const currentMisogynyScore = result.score_misogyny ?? 0;
             setMisogynyScore(currentMisogynyScore);
-            setIsFlagged(result.is_misogynistic); // Use the boolean flag from backend
+            setIsFlagged(result.is_misogynistic);
 
-            // --- Determine severity based on the single misogyny score ---
-            // Adjust these thresholds based on your tuning with the new model
             if (currentMisogynyScore > 0.8) setSeverity('high');
             else if (currentMisogynyScore > 0.5) setSeverity('medium');
-            else if (currentMisogynyScore > 0.2) setSeverity('low'); // Lower threshold for 'low' severity? Test!
+            else if (currentMisogynyScore > 0.2) setSeverity('low');
             else setSeverity('none');
 
-            // --- Update feedback message and trigger features based on backend flag ---
              if (result.is_misogynistic) {
                  setFlaggedCount(prevCount => prevCount + 1);
 
                  let message = "This text contains potentially harmful language.";
-                 // You could add info about the specific score if desired
-                 // message += ` Misogyny likelihood: ${Math.round(currentMisogynyScore * 100)}%.`;
                  if (result.rule_applied) {
-                     message += ` (Identified by rule: ${result.rule_applied})`; // Optional: indicate if rule triggered
+                     message += ` (Identified by rule: ${result.rule_applied})`;
                  }
                  setFeedback(message);
 
-                 // Generate suggestions if flagged by the backend
-                 const newSuggestions = generateSuggestions(text, currentMisogynyScore); // Pass the single score
+                 const newSuggestions = generateSuggestions(text, currentMisogynyScore);
                  setSuggestions(newSuggestions);
-                 setShowStatistics(true); // Show statistics when content is flagged
+                 setShowStatistics(true);
              } else {
                  setFeedback("Text appears to be inclusive and respectful.");
-                 setSuggestions([]); // Clear suggestions for non-flagged text
-                 setShowStatistics(false); // Hide statistics for non-flagged text
+                 setSuggestions([]);
+                 setShowStatistics(false);
              }
 
              if (result.error) {
                  console.error("Backend reported error:", result.error);
-                 setFeedback(`Backend message: ${result.error}`); // Overwrite previous feedback
+                 setFeedback(`Backend message: ${result.error}`);
              }
 
         } catch (error) {
             console.error("Error checking text:", error);
             const errorMessage = error instanceof Error ? error.message : String(error);
-            setFeedback(`Connection error: ${errorMessage}`); // Show connection/fetch errors
-            setIsFlagged(false); // Ensure flag is off on error
-            setSeverity('none'); // Ensure severity is none on error
-            // Reset score on error
+            setFeedback(`Connection error: ${errorMessage}`);
+            setIsFlagged(false);
+            setSeverity('none');
             setMisogynyScore(0);
         } finally {
-            setIsAnalyzing(false); // End loading state
+            setIsAnalyzing(false);
         }
     };
 
-
-    // --- useEffect hook for debounced analysis (Keep) ---
     useEffect(() => {
         if (inputText.trim() === "") {
             setIsFlagged(false);
@@ -244,7 +196,7 @@ export default function HomePage() {
             setSuggestions([]);
             setShowStatistics(false);
             setIsAnalyzing(false);
-            setMisogynyScore(0); // Reset score when input is empty
+            setMisogynyScore(0);
             return;
         }
 
@@ -257,10 +209,8 @@ export default function HomePage() {
             clearTimeout(handler);
         };
 
-    }, [inputText]); // Effect re-runs when inputText changes
+    }, [inputText]);
 
-
-    // --- Handler for direct text input (contenteditable div) (Keep) ---
     const handleInput = (event: React.FormEvent<HTMLDivElement>) => {
         if (textInputRef.current && event.currentTarget === textInputRef.current) {
             const currentText = event.currentTarget.textContent ?? '';
@@ -268,18 +218,15 @@ export default function HomePage() {
         }
     };
 
-    // --- Apply a suggestion (Keep) ---
     const applySuggestion = (original: string, suggested: string) => {
         if (textInputRef.current && textInputRef.current.textContent !== null) {
             const regex = new RegExp(`\\b${original}\\b`, 'gi');
             const newText = textInputRef.current.textContent.replace(regex, suggested);
             textInputRef.current.textContent = newText;
-            setInputText(newText); // Trigger re-analysis via useEffect
+            setInputText(newText);
         }
     };
 
-
-     // --- Get color scheme based on severity (Keep) ---
      const getSeverityColors = () => {
         switch (severity) {
             case 'high': return { border: 'border-red-500', bg: 'bg-red-50', text: 'text-red-700', icon: <AlertTriangle className="w-5 h-5 text-red-600" /> };
@@ -288,85 +235,70 @@ export default function HomePage() {
             default: return { border: 'border-green-400', bg: 'bg-green-50', text: 'text-green-700', icon: <Check className="w-5 h-5 text-green-600" /> };
         }
     };
-    const colors = getSeverityColors(); // Get colors based on current severity state
+    const colors = getSeverityColors();
 
-    // --- Clear the input area (Keep) ---
     const handleClear = () => {
         if (textInputRef.current) {
-            textInputRef.textContent = ''; // Clear the div content
-            setInputText(''); // Clear the state (triggers useEffect cleanup)
-            // Reset all analysis-related states
+            textInputRef.textContent = '';
+            setInputText('');
             setIsFlagged(false);
             setFeedback('');
             setSeverity('none');
             setSuggestions([]);
             setShowStatistics(false);
             setIsAnalyzing(false);
-            setMisogynyScore(0); // Reset score on clear
+            setMisogynyScore(0);
         }
     };
 
-
-    // --- Render the UI using the new components ---
     return (
         <div className="min-h-screen bg-gradient-to-b from-purple-50 to-blue-50 py-10 px-4">
             <div className="max-w-3xl mx-auto">
-                {/* Header */}
                 <header className="text-center mb-8">
                     <h1 className="text-3xl font-bold text-indigo-800 mb-2">ShieldHER</h1>
                     <p className="text-lg text-gray-600">Detect and prevent online misogyny in real-time</p>
                 </header>
 
                 <main className="bg-white rounded-xl shadow-lg overflow-hidden">
-
-                    {/* Info Panel - Use the component */}
                     <InfoPanel
                         showInfoPanel={showInfoPanel}
                         setShowInfoPanel={setShowInfoPanel}
                     />
 
-                    {/* Input Section - Use the component */}
                     <InputArea
                         textInputRef={textInputRef}
-                        inputText={inputText} // Pass input text state (read-only here)
-                        handleInput={handleInput} // Pass the input handler
-                        handleClear={handleClear} // Pass the clear handler
-                        isAnalyzing={isAnalyzing} // Pass analyzing state
-                        isFlagged={isFlagged} // Pass flagged state
-                        colors={colors} // Pass severity colors
+                        inputText={inputText}
+                        handleInput={handleInput}
+                        handleClear={handleClear}
+                        isAnalyzing={isAnalyzing}
+                        isFlagged={isFlagged}
+                        colors={colors}
                     />
 
-                    {/* Feedback Area - Use the component */}
-                    {/* Only render FeedbackPanel if there's feedback OR if input is not empty OR analysis is happening */}
                     {(feedback || inputText.trim() !== '' || isAnalyzing) && (
                         <FeedbackPanel
                             feedback={feedback}
                             isFlagged={isFlagged}
                             severity={severity}
-                            // --- Pass the single misogyny score ---
                             misogynyScore={misogynyScore}
                             suggestions={suggestions}
                             applySuggestion={applySuggestion}
                             showStatistics={showStatistics}
                             setShowStatistics={setShowStatistics}
                             flaggedCount={flaggedCount}
-                            misogynisticStatisticsData={misogynisticStatisticsData} // Pass fetched data
-                            statsLoading={statsLoading} // Pass loading state
-                            statsError={statsError} // Pass error state
+                            misogynisticStatisticsData={misogynisticStatisticsData}
+                            statsLoading={statsLoading}
+                            statsError={statsError}
                         />
                     )}
 
-
-                    {/* Action Footer - Use the component */}
                     <ActionFooter
-                        inputText={inputText} // Pass input text state
-                        isAnalyzing={isAnalyzing} // Pass analyzing state
-                        checkTextWithApi={checkTextWithApi} // Pass the analysis trigger function
+                        inputText={inputText}
+                        isAnalyzing={isAnalyzing}
+                        checkTextWithApi={checkTextWithApi}
                     />
-
                 </main>
 
-                {/* Project Context */}
                 <div className="mt-8 text-center text-gray-600 text-sm">
                     <p>A hackathon project for gender equality & inclusive online spaces</p>
                 </div>
@@ -374,6 +306,3 @@ export default function HomePage() {
         </div>
     );
 }
-
-// --- Global Styles are handled in styles/globals.css ---
-// No need for the <style jsx global> block here anymore

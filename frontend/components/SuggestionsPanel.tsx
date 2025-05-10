@@ -1,22 +1,19 @@
-// frontend/components/SuggestionsPanel.tsx
 
-'use client'; // Use if using client-side features (onClick, useState)
+'use client'; 
 
-import React, { useState } from 'react'; // Import React and useState
-import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react'; // Import icons
+import React, { useState } from 'react'; 
+import { MessageCircle, ChevronDown, ChevronUp } from 'lucide-react'; 
 
-// Define types for suggestions
 interface Suggestion {
     original: string;
     suggested: string;
     reason: string;
 }
 
-// Define the props this component expects
 interface SuggestionsPanelProps {
-    suggestions: Suggestion[]; // Array of suggestions from parent
-    applySuggestion: (original: string, suggested: string) => void; // Function from parent
-    colors: { text: string }; // Need text color from parent's severity colors
+    suggestions: Suggestion[]; 
+    applySuggestion: (original: string, suggested: string) => void; 
+    colors: { text: string }; 
 }
 
 const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
@@ -26,17 +23,7 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
 }) => {
     const [showSuggestions, setShowSuggestions] = useState<boolean>(false); // Internal state for toggling
 
-    // Use useEffect or check `suggestions.length` to decide initial show state
-    // For now, let's default to false and user clicks to show
-    // useEffect(() => {
-    //     if (suggestions && suggestions.length > 0) {
-    //         setShowSuggestions(true); // Auto-show if suggestions are generated
-    //     } else {
-    //         setShowSuggestions(false);
-    //     }
-    // }, [suggestions]); // Re-evaluate when suggestions change
 
-    // Only render if there are suggestions
     if (suggestions.length === 0) {
         return null;
     }
@@ -72,17 +59,11 @@ const SuggestionsPanel: React.FC<SuggestionsPanelProps> = ({
                                 <p className="text-gray-600 text-xs">{suggestion.reason}</p>
                             </li>
                         ))}
-                         {/* This case should not be reached if suggestions.length > 0, but kept for robustness */}
-                        {/* {suggestions.length === 0 && (
-                             <li className="text-sm text-gray-600">
-                                 No specific suggestions available. Consider reviewing your overall tone and language.
-                             </li>
-                         )} */}
+                         
                     </ul>
                 </div>
             )}
 
-            {/* Message if suggestions panel is shown but array is empty (shouldn't happen with the above logic) */}
              {showSuggestions && suggestions.length === 0 && (
                 <div className="mt-3 bg-white rounded-md border border-gray-200 p-3">
                     <p className="text-sm text-gray-600">

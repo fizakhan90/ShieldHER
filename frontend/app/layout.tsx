@@ -1,13 +1,11 @@
-import '../styles/globals.css'; // Import your global styles
+import '../styles/globals.css'; 
 import type { Metadata } from 'next';
 
-// Define metadata
 export const metadata: Metadata = {
   title: 'SheildHER - Misogyny Detection Simulator',
   description: 'An AI-powered tool for detecting and preventing online misogyny in real-time, supporting SDG 5 and SDG 10',
 };
 
-// Root Layout Component with explicit type for children
 export default function RootLayout({
   children,
 }: {

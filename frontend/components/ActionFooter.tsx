@@ -1,15 +1,13 @@
-// frontend/components/ActionFooter.tsx
+'use client'; 
 
-'use client'; // Use if using client-side features (onClick)
+import React from 'react'; 
+import { Send } from 'lucide-react'; 
 
-import React from 'react'; // Import React
-import { Send } from 'lucide-react'; // Import icon
 
-// Define the props this component expects
 interface ActionFooterProps {
-    inputText: string; // State from parent
-    isAnalyzing: boolean; // State from parent
-    checkTextWithApi: (text: string) => Promise<void>; // Function from parent
+    inputText: string;
+    isAnalyzing: boolean; 
+    checkTextWithApi: (text: string) => Promise<void>;
 }
 
 const ActionFooter: React.FC<ActionFooterProps> = ({

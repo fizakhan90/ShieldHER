@@ -1,12 +1,9 @@
-// frontend/components/InfoPanel.tsx
+'use client'; 
 
-'use client'; // Necessary if this component uses client-side features (like onClick, useState)
-               // In this case, it uses onClick and useState (in parent), so good practice.
+import React from 'react'; 
+import { Info } from 'lucide-react'; 
 
-import React from 'react'; // Import React
-import { Info } from 'lucide-react'; // Import icon
 
-// Define the props this component expects
 interface InfoPanelProps {
     showInfoPanel: boolean;
     setShowInfoPanel: (show: boolean) => void;
@@ -14,8 +11,7 @@ interface InfoPanelProps {
 
 const InfoPanel: React.FC<InfoPanelProps> = ({ showInfoPanel, setShowInfoPanel }) => {
     return (
-        <> {/* Use Fragment if you don't need a wrapping div */}
-            {/* Info Panel - Toggle */}
+        <> 
             <div className="bg-indigo-100 p-4 flex justify-between items-center">
                 <div className="flex items-center">
                     <Info className="w-5 h-5 text-indigo-600 mr-2" />
